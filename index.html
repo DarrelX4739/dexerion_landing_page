@@ -683,23 +683,17 @@ body[data-s="1"] .dots,body[data-s="1"] .progress{opacity:0;pointer-events:none}
   <p class="sub fade-up" style="--dl:1s">Reserve your spot for the beta release here.</p>
 
   <div class="signup-wrap fade-up" id="signupWrap" style="--dl:1.2s">
-    <form class="signup" id="signup" novalidate autocomplete="on">
-      <label class="sr" for="email">Email address</label>
-      <input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required aria-describedby="msg">
-      <input class="hp" id="website" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <button class="btn" id="submitBtn" type="submit">Reserve my spot</button>
-    </form>
-    <form class="signup verify" id="verify" novalidate autocomplete="off">
-      <label class="sr" for="code">6-digit confirmation code</label>
-      <input class="code-in" id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••" maxlength="7" aria-describedby="msg">
-      <button class="btn" id="verifyBtn" type="submit">Confirm</button>
+    <form class="signup" id="signup" novalidate>
+      <button class="btn" id="googleBtn" type="submit" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:10px">
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path fill="#04140d" d="M21.35 11.1H12v2.9h5.35c-.5 2.4-2.55 3.5-5.35 3.5a5.9 5.9 0 1 1 0-11.8c1.5 0 2.85.55 3.9 1.45l2.05-2.05A8.75 8.75 0 1 0 12 20.75c4.4 0 7.85-3.05 7.85-7.5 0-.7-.1-1.45-.5-2.15z"/></svg>
+        <span id="googleLabel">Reserve my spot</span>
+      </button>
     </form>
     <div class="thanks" id="thanks" role="status" aria-live="polite">
       <span class="ok"><svg class="ic"><use href="#i-check"/></svg></span>
       <span id="thanksTxt">You’re on the Dexerion beta list.</span>
     </div>
   </div>
-  <p class="codehelp" id="codeHelp" hidden>We emailed a 6-digit code to <b id="sentTo"></b>. It expires in 10 minutes (check spam).<br><button type="button" id="resend">Resend code</button> · <button type="button" id="changeEmail">Use a different email</button></p>
   <p class="msg" id="msg" role="alert"></p>
 </section>
 </main>
@@ -882,21 +876,15 @@ document.documentElement.classList.add('js');
   });
 })();
 
-/* ---------- 5. Beta signup: email code verification. We email a 6-digit code; the email is only saved once it is entered ---------- */
+/* ---------- 5. Beta signup: Google sign-in. Clicking reserves via Google; the email is saved only after a successful sign-in ---------- */
 (function(){
-  var form = document.getElementById('signup'), input = document.getElementById('email'),
-      btn = document.getElementById('submitBtn'), msg = document.getElementById('msg'),
-      wrap = document.getElementById('signupWrap'), honey = document.getElementById('website'),
-      thanksTxt = document.getElementById('thanksTxt'),
-      vform = document.getElementById('verify'), codeIn = document.getElementById('code'),
-      vbtn = document.getElementById('verifyBtn'), help = document.getElementById('codeHelp'),
-      sentTo = document.getElementById('sentTo'), resend = document.getElementById('resend'),
-      change = document.getElementById('changeEmail');
-  var pendingEmail = '', resendTimer = null;
+  var form = document.getElementById('signup'),
+      btn = document.getElementById('googleBtn'), label = document.getElementById('googleLabel'),
+      msg = document.getElementById('msg'),
+      wrap = document.getElementById('signupWrap'),
+      thanksTxt = document.getElementById('thanksTxt');
 
   // ====================== FIREBASE CONFIGURATION ======================
-  // These values identify your project and are safe to ship in client code. What protects your data is
-  // your Firestore rules (firestore.rules: no client access at all) and the Cloud Functions in /functions.
   var firebaseConfig = {
     apiKey: "AIzaSyA-IUWxMDywZDhyFVpeWwy5MBT266Lzlnk",
     authDomain: "dexerion-browse.firebaseapp.com",
@@ -906,130 +894,90 @@ document.documentElement.classList.add('js');
     appId: "1:673207882418:web:b89c8a778a145c6e5a6fab",
     measurementId: "G-D1YELMLZQ1"
   };
-  var FUNCTIONS_REGION = "us-central1";          // must match REGION in functions/index.js
   var SDK = "10.12.2";
   var SDK_BASE = "https://cdn.jsdelivr.net/npm/firebase@" + SDK;
-
-  // In a preview frame (for example a Claude artifact) the browser blocks calls to Firebase. Only there, a failed call
-  // still shows a simulated message so the flow can be reviewed. On your real site a failure shows an error instead.
-  var IN_PREVIEW_FRAME = (function(){ try { return window.top !== window.self; } catch(e){ return true; } })();
+  // ==================== END FIREBASE CONFIGURATION ====================
 
   var fbPromise = null;
   function loadFirebase(){
     if (!fbPromise){
-      fbPromise = Promise.all([ import(SDK_BASE + "/app/+esm"), import(SDK_BASE + "/functions/+esm") ]).then(function(m){
+      fbPromise = Promise.all([ import(SDK_BASE + "/app/+esm"), import(SDK_BASE + "/auth/+esm"), import(SDK_BASE + "/firestore/+esm") ]).then(function(m){
         var app = m[0].initializeApp(firebaseConfig);
-        return { app: app, fns: m[1].getFunctions(app, FUNCTIONS_REGION), fx: m[1] };
+        return {
+          app: app,
+          auth: m[1].getAuth(app),
+          signInWithPopup: m[1].signInWithPopup,
+          provider: new m[1].GoogleAuthProvider(),
+          db: m[2].getFirestore(app),
+          doc: m[2].doc, setDoc: m[2].setDoc,
+          serverTimestamp: m[2].serverTimestamp
+        };
       });
     }
     return fbPromise;
   }
 
-  function call(name, data){
-    return loadFirebase().then(function(fb){ return fb.fx.httpsCallable(fb.fns, name)(data); });
-  }
-  // Emails a 6-digit code. Nothing is stored in the wait list yet.
-  function requestSignup(email){ return call('requestSignup', { email: email }); }
-  // Checks the code. Only a correct code saves the email to the wait list.
-  function verifySignup(email, code){ return call('verifySignup', { email: email, code: code }); }
-
-  if (!IN_PREVIEW_FRAME){
-    window.addEventListener('load', function(){
-      loadFirebase().then(function(fb){ return import(SDK_BASE + "/analytics/+esm").then(function(a){ a.getAnalytics(fb.app); }); }).catch(function(){});
-    });
-  }
-  // ==================== END FIREBASE CONFIGURATION ====================
-
-  function withTimeout(p, ms){
-    return new Promise(function(res, rej){
-      var t = setTimeout(function(){ rej(new Error('timeout')); }, ms);
-      p.then(function(v){ clearTimeout(t); res(v); }, function(e){ clearTimeout(t); rej(e); });
-    });
-  }
-  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-  var TIMEOUT = IN_PREVIEW_FRAME ? 3500 : 20000;
-  function setError(text){
-    msg.textContent = text || '';
-    var on = text ? 'true' : 'false';
-    form.dataset.invalid = on; vform.dataset.invalid = on;
-    input.setAttribute('aria-invalid', on); codeIn.setAttribute('aria-invalid', on);
-  }
-  input.addEventListener('input', function(){ if (msg.textContent) setError(''); });
-  codeIn.addEventListener('input', function(){
-    if (msg.textContent) setError('');
-    codeIn.value = codeIn.value.replace(/\D/g, '').slice(0, 6);
-    if (codeIn.value.length === 6) vform.requestSubmit ? vform.requestSubmit() : vform.dispatchEvent(new Event('submit', { cancelable: true }));
+  window.addEventListener('load', function(){
+    loadFirebase().then(function(fb){ return import(SDK_BASE + "/analytics/+esm").then(function(a){ a.getAnalytics(fb.app); }); }).catch(function(){});
   });
 
+  function setError(text){
+    msg.textContent = text || '';
+    form.dataset.invalid = text ? 'true' : 'false';
+  }
+  function setBusy(busy, text){ btn.disabled = busy; label.textContent = text; }
   function showThanks(text){
     thanksTxt.textContent = text;
-    wrap.classList.remove('code'); wrap.classList.add('done'); help.hidden = true;
+    setError('');
+    wrap.classList.add('done');
     if (window.dexBurst) window.dexBurst();
-  }
-  function cooldown(){
-    var s = 30; resend.disabled = true; clearInterval(resendTimer);
-    resend.textContent = 'Resend code (' + s + 's)';
-    resendTimer = setInterval(function(){
-      s--;
-      if (s <= 0){ clearInterval(resendTimer); resend.disabled = false; resend.textContent = 'Resend code'; }
-      else resend.textContent = 'Resend code (' + s + 's)';
-    }, 1000);
-  }
-  function showCodeStep(email){
-    pendingEmail = email; sentTo.textContent = email;
-    wrap.classList.add('code'); help.hidden = false; codeIn.value = ''; cooldown();
-    setTimeout(function(){ try { codeIn.focus(); } catch(e){} }, 350);
-  }
-  function resetEmailStep(){
-    clearInterval(resendTimer); wrap.classList.remove('code'); help.hidden = true; setError('');
-    btn.disabled = false; btn.textContent = 'Reserve my spot';
-    setTimeout(function(){ try { input.focus(); } catch(e){} }, 350);
-  }
-  function sendCode(email, isResend){
-    return withTimeout(requestSignup(email), TIMEOUT).then(function(){
-      if (isResend){ cooldown(); setError(''); }
-      else showCodeStep(email);
-    }).catch(function(err){
-      if (IN_PREVIEW_FRAME){ if (!isResend) showCodeStep(email); return; }
-      console.error('Could not send code', err);
-      var invalid = err && err.code === 'functions/invalid-argument';
-      setError(invalid ? 'That email address doesn’t look right. Check it and try again.' : 'We couldn’t send the code just now. Please try again in a moment.');
-      if (!isResend){ btn.disabled = false; btn.textContent = 'Reserve my spot'; }
-    });
   }
 
   form.addEventListener('submit', function(e){
     e.preventDefault();
-    if (honey.value) return;                       // bots fill the hidden field; ignore them silently
-    var email = input.value.trim().toLowerCase();
-    if (!email){ setError('Enter your email address to join the list.'); input.focus(); return; }
-    if (email.length > 254 || !EMAIL_RE.test(email)){ setError('That email address doesn’t look right. Check it and try again.'); input.focus(); return; }
+    if (btn.disabled) return;
     setError('');
-    btn.disabled = true; btn.textContent = 'Sending…';
-    sendCode(email, false);
-  });
-
-  vform.addEventListener('submit', function(e){
-    e.preventDefault();
-    var code = codeIn.value.replace(/\D/g, '');
-    if (code.length !== 6){ setError('Enter the 6-digit code from the email.'); codeIn.focus(); return; }
-    if (vbtn.disabled) return;
-    setError(''); vbtn.disabled = true; vbtn.textContent = 'Checking…';
-    withTimeout(verifySignup(pendingEmail, code), TIMEOUT).then(function(){
-      showThanks('You’re confirmed! You’re officially on the Dexerion beta list.');
+    setBusy(true, 'Connecting to Google…');
+    loadFirebase().then(function(fb){
+      fb.provider.setCustomParameters({ prompt: 'select_account' });
+      return fb.signInWithPopup(fb.auth, fb.provider).then(function(result){
+        var user = result && result.user;
+        var email = user && user.email ? user.email.trim().toLowerCase() : '';
+        if (!email){
+          // No email came back — store NOTHING.
+          setError('Google sign-in did not return an email. Nothing was saved — please try again.');
+          return fb.auth.signOut().catch(function(){}).then(function(){ setBusy(false, 'Reserve my spot'); });
+        }
+        // Doc id IS the email, so a repeat signup fails the rules' !exists() check.
+        // No client-side read: rules deny reads, and the payload below always
+        // passes validation, so a denial here means "already on the list".
+        return fb.setDoc(fb.doc(fb.db, 'betaSignups', email), {
+          email: email,
+          source: 'landing-page',
+          createdAt: fb.serverTimestamp()
+        }).then(function(){
+          showThanks('You’re on the Dexerion beta list.');
+        });
+      });
     }).catch(function(err){
-      if (IN_PREVIEW_FRAME){ showThanks('Preview only: on the live site a correct code confirms your spot here.'); return; }
-      var why = err && err.message;
-      if (why === 'too-many'){ setError('Too many wrong tries. Tap “Resend code” to get a new one.'); }
-      else if (why === 'expired'){ setError('That code has expired. Tap “Resend code” to get a new one.'); }
-      else if (why === 'wrong'){ setError('That code isn’t right. Check the email and try again.'); }
-      else { console.error('Could not verify', err); setError('We couldn’t check the code just now. Please try again.'); }
-      codeIn.value = ''; codeIn.focus();
-    }).then(function(){ vbtn.disabled = false; vbtn.textContent = 'Confirm'; });
+      // Any failure — sign-in or save — stores NOTHING.
+      var code = err && err.code;
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request'){
+        setError('Sign-in was cancelled. Nothing was saved.');
+      } else if (code === 'auth/popup-blocked'){
+        setError('The Google popup was blocked. Allow popups and try again — nothing was saved.');
+      } else if (code === 'auth/unauthorized-domain'){
+        setError('This site isn’t authorized for sign-in yet. Nothing was saved.');
+      } else if (code === 'auth/network-request-failed'){
+        setError('Network error during sign-in. Nothing was saved — check your connection and retry.');
+      } else if (code === 'permission-denied'){
+        setError('This Google account is already on the beta list.');
+      } else {
+        setError('Google sign-in failed. Nothing was saved — please try again.');
+      }
+      setBusy(false, 'Reserve my spot');
+    });
   });
-
-  resend.addEventListener('click', function(){ if (!resend.disabled) sendCode(pendingEmail, true); });
-  change.addEventListener('click', resetEmailStep);
 })();
 
 /* ---------- 6. Motion layer ---------- */
