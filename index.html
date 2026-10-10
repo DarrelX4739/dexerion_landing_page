@@ -894,14 +894,20 @@ document.documentElement.classList.add('js');
     appId: "1:673207882418:web:b89c8a778a145c6e5a6fab",
     measurementId: "G-D1YELMLZQ1"
   };
+  // NOTE: Auth/Firestore MUST come from gstatic's official ESM builds, which
+  // share one internal container. Separate jsDelivr "+esm" bundles each carry
+  // their own copy of the Firebase core, so getFirestore() can't see the app
+  // created by the other bundle ("Service firestore is not available").
   var SDK = "10.12.2";
-  var SDK_BASE = "https://cdn.jsdelivr.net/npm/firebase@" + SDK;
+  var SDK_BASE = "https://www.gstatic.com/firebasejs/" + SDK + "/";
   // ==================== END FIREBASE CONFIGURATION ====================
 
   var fbPromise = null;
   function loadFirebase(){
     if (!fbPromise){
-      fbPromise = Promise.all([ import(SDK_BASE + "/app/+esm"), import(SDK_BASE + "/auth/+esm"), import(SDK_BASE + "/firestore/+esm") ]).then(function(m){
+      // Reset on failure: a rejected promise must never be cached, or every
+      // later click would replay the same stale error.
+      fbPromise = Promise.all([ import(SDK_BASE + "firebase-app.js"), import(SDK_BASE + "firebase-auth.js"), import(SDK_BASE + "firebase-firestore.js") ]).then(function(m){
         var app = m[0].initializeApp(firebaseConfig);
         return {
           app: app,
@@ -912,13 +918,13 @@ document.documentElement.classList.add('js');
           doc: m[2].doc, setDoc: m[2].setDoc,
           serverTimestamp: m[2].serverTimestamp
         };
-      });
+      }, function(err){ fbPromise = null; throw err; });
     }
     return fbPromise;
   }
 
   window.addEventListener('load', function(){
-    loadFirebase().then(function(fb){ return import(SDK_BASE + "/analytics/+esm").then(function(a){ a.getAnalytics(fb.app); }); }).catch(function(){});
+    loadFirebase().then(function(fb){ return import(SDK_BASE + "firebase-analytics.js").then(function(a){ a.getAnalytics(fb.app); }); }).catch(function(){});
   });
 
   function setError(text){
@@ -961,6 +967,9 @@ document.documentElement.classList.add('js');
       });
     }).catch(function(err){
       // Any failure — sign-in or save — stores NOTHING.
+      // The full error is logged for DevTools, and unknown codes are shown in
+      // the message so the next failure self-identifies.
+      try { console.error('beta signup failed', err); } catch(logErr){}
       var code = err && err.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request'){
         setError('Sign-in was cancelled. Nothing was saved.');
@@ -968,12 +977,16 @@ document.documentElement.classList.add('js');
         setError('The Google popup was blocked. Allow popups and try again — nothing was saved.');
       } else if (code === 'auth/unauthorized-domain'){
         setError('This site isn’t authorized for sign-in yet. Nothing was saved.');
+      } else if (code === 'auth/operation-not-allowed'){
+        setError('Google sign-in isn’t enabled for this project yet — enable it in Firebase console → Authentication → Sign-in method. Nothing was saved.');
+      } else if (code === 'auth/account-exists-with-different-credential'){
+        setError('This email is already linked to a different sign-in method. Nothing was saved.');
       } else if (code === 'auth/network-request-failed'){
         setError('Network error during sign-in. Nothing was saved — check your connection and retry.');
       } else if (code === 'permission-denied'){
         setError('This Google account is already on the beta list.');
       } else {
-        setError('Google sign-in failed. Nothing was saved — please try again.');
+        setError('Google sign-in failed' + (code ? ' (' + code + ')' : '') + '. Nothing was saved — please try again.');
       }
       setBusy(false, 'Reserve my spot');
     });
