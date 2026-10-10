@@ -310,6 +310,16 @@ h2{margin:0;font:700 clamp(28px,4vw,46px)/1.15 var(--serif);text-wrap:balance}
 /* While the camera moves, freeze the decorative loops so the browser only has the zoom to draw */
 .stage.zooming .ui *,.stage.zooming .ui *::before,.stage.zooming .ui *::after,.stage.zooming .strip,.stage.zooming .desk::before,.stage.zooming .bezel::after{animation-play-state:paused!important}
 .stage.zooming .cursor{filter:none}
+/* ---------- perf: cheap frames while the camera moves ---------- */
+/* The taskbar's 26px backdrop-blur sits inside the giant scaled screen: re-blurring it every zoom frame is the
+   costliest paint on this page, so it drops to a flat fill mid-zoom (visually identical at speed). */
+.stage.zooming .taskbar{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(20,20,20,.94)}
+/* Paint/composite loops outside the hero freeze while zooming; play-state keeps their position so they resume seamlessly. */
+body.zooming .card::after,body.zooming .track.dex i::after,body.zooming .orbs i,body.zooming .beta h2 .ch,body.zooming .timerbtn::after,body.zooming .ptimer::after{animation-play-state:paused}
+/* Offscreen sections skip rendering entirely until scrolled near (scrollIntoView and observers still work). */
+#s2,#s3{content-visibility:auto}
+#s2{contain-intrinsic-size:auto 1500px}
+#s3{contain-intrinsic-size:auto 800px}
 .far{left:-5%;right:-5%;top:0;bottom:0}
 .front{left:0;right:0;top:0;bottom:0}
 .wall{position:absolute;inset:0;background:radial-gradient(60% 50% at 50% 38%,rgba(16,185,129,.07),transparent 70%),repeating-linear-gradient(90deg,rgba(255,255,255,.022) 0 1px,transparent 1px 150px);-webkit-mask:radial-gradient(70% 70% at 50% 40%,#000,transparent);mask:radial-gradient(70% 70% at 50% 40%,#000,transparent)}
@@ -721,7 +731,7 @@ document.documentElement.classList.add('js');
    Timeline over the hero's scroll distance:
    0 to .80  camera pushes in      .80 to .90  taskbar slides away      .90 to 1  screen fades out, then the page scrolls on. */
 (function(){
-  var P = 1600, DUR = 1000, N = 100;                      // camera distance, scrub timeline length (ms), keyframe samples
+  var P = 1600, DUR = 1000, N = 64;                       // camera distance, scrub timeline length (ms), keyframe samples
   var hero = document.getElementById('s1'), stage = document.getElementById('stage'),
       rig = document.getElementById('rig'), screen = document.getElementById('screen');
   var depth = [['far', -900, -5, false], ['desk', -60, 6, true], ['front', 300, 14, true], ['lamp', 420, 22, false], ['spk', 330, 18, false]].map(function(a){
@@ -731,7 +741,7 @@ document.documentElement.classList.add('js');
     var c = el.classList; return { el: el, dx: c.contains('l-left') ? -70 : c.contains('l-right') ? 80 : 0, dy: c.contains('l-search') ? 26 : c.contains('l-meta') ? -20 : 0 };
   });
   var tb = hero.querySelector('.taskbar'), cue = hero.querySelector('.scroll-cue'), vig = hero.querySelector('.vig'), bloom = hero.querySelector('.bloom');
-  var geo = null, anims = [], ready = false, raf = 0, ps = 0, target = 0, last = 0, curP = 0, zooming = false;
+  var geo = null, anims = [], ready = false, raf = 0, ps = 0, target = 0, last = 0, curP = 0, zooming = false, range = 1, heroTop = 0;
   var clamp = function(v, a, b){ return Math.min(b, Math.max(a, v)); };
   var smooth = function(a, b, v){ var t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   var smoother = function(t){ return t * t * t * (t * (t * 6 - 15) + 10); };          // zero velocity AND acceleration at both ends
@@ -744,6 +754,9 @@ document.documentElement.classList.add('js');
     // Scaling everything about one point does that, so solve for the point.
     var zf = Math.max(1.02, sw / W), txf = sw / 2 - zf * (x + W / 2), tyf = sh - zf * (y + H);
     geo = { zf: zf, cx: txf / (1 - zf), cy: tyf / (1 - zf) };
+    // Cache scroll geometry here (resize/load only) so the scroll loop below never forces layout.
+    range = Math.max(1, hero.offsetHeight - stage.clientHeight);
+    heroTop = hero.getBoundingClientRect().top + window.scrollY;
     rig.style.transformOrigin = geo.cx.toFixed(1) + 'px ' + geo.cy.toFixed(1) + 'px';
     depth.forEach(function(d){ d.el.style.transformOrigin = (geo.cx - d.el.offsetLeft).toFixed(1) + 'px ' + (geo.cy - d.el.offsetTop).toFixed(1) + 'px'; });
   }
@@ -787,11 +800,10 @@ document.documentElement.classList.add('js');
     var t = p * DUR;
     for (var i = 0; i < anims.length; i++) anims[i].currentTime = t;
     var z = p > .003 && p < .995;
-    if (z !== zooming){ zooming = z; window.__dexZoom = z; stage.classList.toggle('zooming', z); }
+    if (z !== zooming){ zooming = z; window.__dexZoom = z; stage.classList.toggle('zooming', z); document.body.classList.toggle('zooming', z); }
   }
   function readTarget(){
-    var range = Math.max(1, hero.offsetHeight - stage.clientHeight);
-    target = clamp(-hero.getBoundingClientRect().top / range, 0, 1);
+    target = clamp((window.scrollY - heroTop) / range, 0, 1);
   }
   function loop(now){
     raf = 0; readTarget();
@@ -868,9 +880,14 @@ document.documentElement.classList.add('js');
 
   document.querySelectorAll('.card').forEach(function(c){
     c.addEventListener('pointermove', function(e){
-      var r = c.getBoundingClientRect();
-      c.style.setProperty('--mx', (e.clientX - r.left) + 'px');
-      c.style.setProperty('--my', (e.clientY - r.top) + 'px');
+      if (c._glow) return; c._glow = true;                       // coalesce floods of pointer events into one paint per frame
+      var x = e.clientX, y = e.clientY;
+      requestAnimationFrame(function(){
+        c._glow = false;
+        var r = c.getBoundingClientRect();
+        c.style.setProperty('--mx', (x - r.left) + 'px');
+        c.style.setProperty('--my', (y - r.top) + 'px');
+      });
     });
     c.addEventListener('pointerleave', function(){ c.style.setProperty('--mx','50%'); c.style.setProperty('--my','0%'); });
   });
@@ -1009,21 +1026,34 @@ document.documentElement.classList.add('js');
   var par = {'.c-stat':-8, '.c-vt':-26, '.c-star':16, '.c-pom':22, '.c-ai':-16};
   var parEls = Object.keys(par).map(function(k){ var el = $(k); if (el) el.dataset.par = par[k]; return el; }).filter(Boolean);
   var pt = false, orbsEl = $('.orbs'), progEl = $('.progress'), spotEl = $('.spot');
+  // Element centers cached on resize/load: the scroll handler then needs zero layout reads.
+  var parCache = [];
+  function cachePar(){
+    parCache = parEls.map(function(el){ var r = el.getBoundingClientRect(); return { el: el, c: r.top + window.scrollY + r.height / 2, h: r.height, k: +el.dataset.par }; });
+  }
   function onScroll(){
     if (pt) return; pt = true;
     requestAnimationFrame(function(){
       var max = Math.max(1, root.scrollHeight - innerHeight);
       orbsEl.style.setProperty('--sy', scrollY.toFixed(0));
       progEl.style.setProperty('--prog', Math.min(1, scrollY / max).toFixed(4));
-      parEls.forEach(function(el){
-        var r = el.getBoundingClientRect(); if (r.bottom < -120 || r.top > innerHeight + 120) return;
-        var d = (r.top + r.height / 2 - innerHeight / 2) / innerHeight;
-        el.style.translate = '0 ' + (d * (+el.dataset.par)).toFixed(1) + 'px';
-      });
+      // Card parallax targets live below the hero: skip them entirely while the camera moves.
+      if (!window.__dexZoom){
+        for (var i = 0; i < parCache.length; i++){
+          var it = parCache[i], top = it.c - scrollY - it.h / 2;
+          if (top > innerHeight + 120 || top + it.h < -120) continue;
+          var d = (top + it.h / 2 - innerHeight / 2) / innerHeight;
+          it.el.style.translate = '0 ' + (d * it.k).toFixed(1) + 'px';
+        }
+      }
       pt = false;
     });
   }
   addEventListener('scroll', onScroll, {passive:true}); onScroll();
+  addEventListener('resize', cachePar); window.addEventListener('load', cachePar); cachePar();
+  // content-visibility:auto swaps estimated sizes for real ones as sections render: re-cache once scrolling settles.
+  var cacheT = null;
+  addEventListener('scroll', function(){ clearTimeout(cacheT); cacheT = setTimeout(cachePar, 600); }, {passive:true});
 
   /* pointer: soft spotlight */
   addEventListener('pointermove', function(e){ spotEl.style.setProperty('--px', e.clientX + 'px'); spotEl.style.setProperty('--py', e.clientY + 'px'); }, {passive:true});
@@ -1141,7 +1171,14 @@ document.documentElement.classList.add('js');
 
   /* magnetic submit button */
   var mb = $('.btn');
-  mb.addEventListener('pointermove', function(e){ var r = mb.getBoundingClientRect(); mb.style.translate = ((e.clientX - r.left - r.width / 2) * .18).toFixed(1) + 'px ' + ((e.clientY - r.top - r.height / 2) * .3).toFixed(1) + 'px'; });
+  mb.addEventListener('pointermove', function(e){
+    if (mb._mag) return; mb._mag = true;
+    var x = e.clientX, y = e.clientY;
+    requestAnimationFrame(function(){
+      mb._mag = false;
+      var r = mb.getBoundingClientRect(); mb.style.translate = ((x - r.left - r.width / 2) * .18).toFixed(1) + 'px ' + ((y - r.top - r.height / 2) * .3).toFixed(1) + 'px';
+    });
+  });
   mb.addEventListener('pointerleave', function(){ mb.style.translate = ''; });
 
   /* confetti when the signup lands */
