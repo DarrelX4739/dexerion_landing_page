@@ -455,6 +455,24 @@ body[data-s="1"] .dots,body[data-s="1"] .progress{opacity:0;pointer-events:none}
 }
 </style>
 
+<style>
+/* ---- zoom perf patch ---- */
+/* will-change is only applied while the camera can move (class set from JS), then released */
+.stage.armed .rig,.stage.armed .l3,.stage.armed .fx,.stage.armed .vig,.stage.armed .bloom{will-change:transform,opacity}
+.rig,.l3{backface-visibility:hidden}
+/* isolate the big UI so its repaints (typing, cursor) never invalidate the page */
+.screen{contain:layout paint style}
+.ui{contain:layout paint style}
+/* low-end / mobile tier: drop decorative depth layers and always-on loops */
+html.lite #far,html.lite #lamp,html.lite #spk,html.lite .vig,html.lite .bloom,
+html.lite .orbs,html.lite .dust,html.lite .spot,html.lite .cursor{display:none!important}
+html.lite .screen{animation:none}
+html.lite .bezel{box-shadow:0 18px 36px rgba(0,0,0,.6)}
+html.lite .hero{height:420svh}
+/* reduced motion: no scroll-jacked zoom at all, just the static monitor */
+@media (prefers-reduced-motion:reduce){.hero{height:100svh}.scroll-cue{display:none}}
+</style>
+
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
@@ -711,6 +729,14 @@ body[data-s="1"] .dots,body[data-s="1"] .progress{opacity:0;pointer-events:none}
 
 <script>
 document.documentElement.classList.add('js');
+/* Performance tier: few cores, low memory, Save-Data, or a small touch screen => "lite" */
+(function(){
+  var n = navigator, c = n.connection || {};
+  var lite = (n.hardwareConcurrency && n.hardwareConcurrency <= 4) || (n.deviceMemory && n.deviceMemory <= 4) ||
+    c.saveData === true || (window.matchMedia && matchMedia('(pointer:coarse)').matches && Math.min(innerWidth, innerHeight) < 900);
+  window.__dexLite = !!lite;
+  if (lite) document.documentElement.classList.add('lite');
+})();
 
 /* ---------- 1. Scale the 1916x1040 browser UI to whatever the monitor is ---------- */
 (function(){
@@ -731,17 +757,18 @@ document.documentElement.classList.add('js');
    Timeline over the hero's scroll distance:
    0 to .80  camera pushes in      .80 to .90  taskbar slides away      .90 to 1  screen fades out, then the page scrolls on. */
 (function(){
-  var P = 1600, DUR = 1000, N = 64;                       // camera distance, scrub timeline length (ms), keyframe samples
+  var P = 1600, DUR = 1000, N = window.__dexLite ? 32 : 64,
+      RMhero = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);                       // camera distance, scrub timeline length (ms), keyframe samples
   var hero = document.getElementById('s1'), stage = document.getElementById('stage'),
       rig = document.getElementById('rig'), screen = document.getElementById('screen');
-  var depth = [['far', -900, -5, false], ['desk', -60, 6, true], ['front', 300, 14, true], ['lamp', 420, 22, false], ['spk', 330, 18, false]].map(function(a){
+  var depth = [['far', -900, -5, false], ['desk', -60, 6, true], ['front', 300, 14, true], ['lamp', 420, 22, false], ['spk', 330, 18, false]].filter(function(a){ return !(window.__dexLite && (a[0] === 'far' || a[0] === 'lamp' || a[0] === 'spk')); }).map(function(a){
     return { el: document.getElementById(a[0]), z: a[1], par: a[2], fade: a[3] };
   });
   var fxs = Array.prototype.map.call(hero.querySelectorAll('.fx'), function(el){
     var c = el.classList; return { el: el, dx: c.contains('l-left') ? -70 : c.contains('l-right') ? 80 : 0, dy: c.contains('l-search') ? 26 : c.contains('l-meta') ? -20 : 0 };
   });
   var tb = hero.querySelector('.taskbar'), cue = hero.querySelector('.scroll-cue'), vig = hero.querySelector('.vig'), bloom = hero.querySelector('.bloom');
-  var geo = null, anims = [], ready = false, raf = 0, ps = 0, target = 0, last = 0, curP = 0, zooming = false, range = 1, heroTop = 0;
+  var geo = null, anims = [], ready = false, armed = false, raf = 0, ps = 0, target = 0, last = 0, curP = 0, zooming = false, range = 1, heroTop = 0;
   var clamp = function(v, a, b){ return Math.min(b, Math.max(a, v)); };
   var smooth = function(a, b, v){ var t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   var smoother = function(t){ return t * t * t * (t * (t * 6 - 15) + 10); };          // zero velocity AND acceleration at both ends
@@ -760,6 +787,7 @@ document.documentElement.classList.add('js');
     rig.style.transformOrigin = geo.cx.toFixed(1) + 'px ' + geo.cy.toFixed(1) + 'px';
     depth.forEach(function(d){ d.el.style.transformOrigin = (geo.cx - d.el.offsetLeft).toFixed(1) + 'px ' + (geo.cy - d.el.offsetTop).toFixed(1) + 'px'; });
   }
+  function s3(v){ v = v.toFixed(4); return 'scale3d(' + v + ',' + v + ',1)'; }
   function dolly(p){ var u = clamp(p / .8, 0, 1); return P * (1 - 1 / Math.pow(geo.zf, smoother(u))); }   // camera travel T at progress p
 
   function frames(fn){ var out = []; for (var i = 0; i <= N; i++){ var k = fn(i / N); k.offset = i / N; out.push(k); } return out; }
@@ -773,16 +801,16 @@ document.documentElement.classList.add('js');
     var els = [rig, tb, cue, vig, bloom].concat(depth.map(function(d){ return d.el; }), fxs.map(function(f){ return f.el; }));
     els.forEach(function(el){ if (el) el.getAnimations().forEach(function(a){ if (a.playState !== 'finished') a.finish(); }); });
 
-    scrub(rig, frames(function(p){ return { transform: 'scale(' + (P / (P - dolly(p))).toFixed(4) + ')', opacity: clamp((1 - p) * 8.3, 0, 1) }; }));
+    scrub(rig, frames(function(p){ return { transform: s3(P / (P - dolly(p))), opacity: clamp((1 - p) * 8.3, 0, 1) }; }));
     depth.forEach(function(d){
       scrub(d.el, frames(function(p){
         var den = P - d.z - dolly(p), o = clamp((den - 150) / 250, 0, 1);       // objects fade out as they pass the camera
         if (d.fade) o *= clamp(1.7 - 1.9 * p, 0, 1);
-        return { transform: 'scale(' + ((P - d.z) / Math.max(den, 120)).toFixed(4) + ')', opacity: o };
+        return { transform: s3((P - d.z) / Math.max(den, 120)), opacity: o };
       }));
     });
     fxs.forEach(function(f){
-      scrub(f.el, frames(function(p){ return { transform: 'translate(' + (f.dx * p).toFixed(1) + 'px,' + (f.dy * p).toFixed(1) + 'px)', opacity: clamp(1 - p * 2.4, 0, 1) }; }));
+      scrub(f.el, frames(function(p){ return { transform: 'translate3d(' + (f.dx * p).toFixed(1) + 'px,' + (f.dy * p).toFixed(1) + 'px,0)', opacity: clamp(1 - p * 2.4, 0, 1) }; }));
     });
     if (tb) scrub(tb, frames(function(p){ var t = clamp((p - .8) * 10, 0, 1); return { transform: 'translateY(' + (t * 100).toFixed(1) + '%)', opacity: 1 - t }; }));
     if (cue) scrub(cue, frames(function(p){ return { opacity: clamp(1 - p * 4, 0, 1) }; }));
@@ -792,13 +820,15 @@ document.documentElement.classList.add('js');
     }));
     ready = true;
   }
-  function teardown(){ anims.forEach(function(a){ a.cancel(); }); anims = []; ready = false; }
+  function teardown(){ anims.forEach(function(a){ a.cancel(); }); anims = []; ready = false; armed = false; stage.classList.remove('armed'); }
 
   function apply(p){
+    if (RMhero) return;
     curP = p;
     if (!ready){ if (p <= .0005) return; build(); }
     var t = p * DUR;
     for (var i = 0; i < anims.length; i++) anims[i].currentTime = t;
+    var arm = p < .995; if (arm !== armed){ armed = arm; stage.classList.toggle('armed', arm); }
     var z = p > .003 && p < .995;
     if (z !== zooming){ zooming = z; window.__dexZoom = z; stage.classList.toggle('zooming', z); document.body.classList.toggle('zooming', z); }
   }
@@ -859,7 +889,7 @@ document.documentElement.classList.add('js');
   }, {passive:true});
 
   /* Pre-build the scrubbed animations shortly after entrance so the first scroll pays zero setup cost. */
-  setTimeout(function(){ if (!ready && ps <= .0005){ try { build(); } catch(preErr){} } }, 2600);
+  setTimeout(function(){ if (!RMhero && !ready && ps <= .0005){ try { build(); stage.classList.add('armed'); armed = true; } catch(preErr){} } }, 2600);
 
   function remeasure(){
     geo = null;
@@ -1106,7 +1136,7 @@ document.documentElement.classList.add('js');
   /* floating dust */
   (function(){
     if (RM) return;
-    var c = $('#dust'), g = c.getContext('2d'), W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 1.5), P = [];
+    if (window.__dexLite) return; var c = $('#dust'), g = c.getContext('2d'), W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 1.5), P = [];
     function size(){ W = innerWidth; H = innerHeight; c.width = W * dpr; c.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); }
     function mk(init){ return {x:Math.random() * W, y:init ? Math.random() * H : H + 10, r:.5 + Math.random() * 1.5, vy:.08 + Math.random() * .28, ph:Math.random() * 6.28, a:.12 + Math.random() * .4, m:Math.random() < .6}; }
     size(); for (var i = 0; i < 54; i++) P.push(mk(true));
@@ -1153,7 +1183,7 @@ document.documentElement.classList.add('js');
   }, 650);
 
   /* hero: typing in the search bar, assistant conversation */
-  async function heroSearch(){
+  async function heroSearch(){ if (window.__dexLite) return;
     if (RM) return;
     var bar = $('.sbar'), el = $('#typed'), ph = 'Search Dexerion or type a URL';
     var qs = ['how to stay focused while studying', 'pomodoro technique for beginners', 'notes app for students'];
@@ -1163,7 +1193,7 @@ document.documentElement.classList.add('js');
       await eraseText(el, 12); await typeText(el, ph, 22); bar.classList.remove('typing'); await sleep(9000);
     }
   }
-  async function heroChat(){
+  async function heroChat(){ if (window.__dexLite) return;
     if (RM) return;
     var chat = $('#pchat'), meta = $('#pmeta'), pin = $('#pin'), pinTxt = $('#pinTxt');
     function msg(cls, txt){ var d = document.createElement('div'); d.className = 'pm ' + cls; d.textContent = txt || ''; chat.appendChild(d); return d; }
