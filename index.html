@@ -816,6 +816,51 @@ document.documentElement.classList.add('js');
   function queue(){ if (!raf) raf = requestAnimationFrame(loop); }
   window.addEventListener('scroll', queue, {passive:true});
 
+  /* Auto-glide: once the user scrolls down even a bit from the top, take over and glide to the
+     performance section over 2s. The zoom itself is still driven by scroll position, so the effect
+     lasts exactly AUTO_MS. Any real user input cancels the glide instantly; reaching the top re-arms it. */
+  var AUTO_MS = 2000, armed = true, auto = 0, autoFrom = 0, autoTo = 0, autoT0 = 0;
+  var reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function cancelAuto(){ auto = 0; }
+  function startAuto(){
+    var s = document.getElementById('s2'); if (!s) return;
+    var to = s.getBoundingClientRect().top + window.scrollY, from = window.scrollY;
+    if (to - from < 40) return;
+    auto = 1; autoFrom = from; autoTo = to; autoT0 = performance.now();
+    requestAnimationFrame(autoStep);
+  }
+  function autoStep(now){
+    if (!auto) return;
+    var ms = auto === 2 ? 450 : AUTO_MS;
+    var k = Math.min(1, (now - autoT0) / ms);
+    var e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+    window.scrollTo(0, autoFrom + (autoTo - autoFrom) * e);
+    if (k < 1){ requestAnimationFrame(autoStep); return; }
+    if (auto === 1){
+      // Sections render for real mid-glide and shift the page: re-resolve s2 and correct any remainder.
+      var s = document.getElementById('s2');
+      var fresh = s ? s.getBoundingClientRect().top + window.scrollY : window.scrollY;
+      if (Math.abs(fresh - window.scrollY) > 2){
+        auto = 2; autoFrom = window.scrollY; autoTo = fresh; autoT0 = now;
+        requestAnimationFrame(autoStep); return;
+      }
+    }
+    auto = 0;
+  }
+  window.addEventListener('wheel', cancelAuto, {passive:true});
+  window.addEventListener('touchmove', cancelAuto, {passive:true});
+  window.addEventListener('keydown', function(e){
+    if (auto && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'PageDown' || e.key === 'PageUp' || e.key === ' ' || e.key === 'Home' || e.key === 'End')) cancelAuto();
+  });
+  window.addEventListener('scroll', function(){
+    if (auto || reduceMotion) return;   // programmatic glides never retrigger; reduced-motion users scroll manually
+    if (window.scrollY < 8){ armed = true; return; }
+    if (armed){ armed = false; startAuto(); }
+  }, {passive:true});
+
+  /* Pre-build the scrubbed animations shortly after entrance so the first scroll pays zero setup cost. */
+  setTimeout(function(){ if (!ready && ps <= .0005){ try { build(); } catch(preErr){} } }, 2600);
+
   function remeasure(){
     geo = null;
     if (ready){ teardown(); measure(); build(); var t = curP * DUR; anims.forEach(function(a){ a.currentTime = t; }); }
