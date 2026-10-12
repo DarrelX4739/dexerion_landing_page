@@ -473,6 +473,167 @@ html.lite .hero{height:420svh}
 @media (prefers-reduced-motion:reduce){.hero{height:100svh}.scroll-cue{display:none}}
 </style>
 
+<style>
+/* ---- motion patch 2: performance page + scroll animations ---- */
+
+/* heading: underline sweeps in after the words land */
+.stats-head h2::after{content:"";display:block;width:84px;height:3px;margin:20px auto 0;border-radius:3px;
+  background:linear-gradient(90deg,transparent,var(--mint-hi),transparent);box-shadow:0 0 18px var(--mint-glow)}
+.js .stats-head h2::after{transform:scaleX(0);transition:transform 1.1s var(--ease) .7s}
+.js .stats-head h2.in::after{transform:scaleX(1)}
+
+/* the big number gets a slow light sweep (paint-based, so skipped in lite mode and while zooming) */
+@keyframes numShine{0%{background-position:130% 0}45%,100%{background-position:-30% 0}}
+html:not(.lite) .big .num{background:linear-gradient(100deg,#f4f6f4 38%,#6ee7b7 50%,#f4f6f4 62%) 0 0/260% 100%;
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:numShine 6s ease-in-out 2s infinite}
+body.zooming .big .num{animation-play-state:paused}
+
+/* every card enters from its own direction */
+.js .c-stat.reveal:not(.in){transform:translate3d(0,56px,0) scale(.95)}
+.js .c-vt.reveal:not(.in){transform:translate3d(-56px,28px,0) rotate(-2.5deg) scale(.96)}
+.js .c-star.reveal:not(.in){transform:translate3d(0,64px,0) scale(.94)}
+.js .c-pom.reveal:not(.in){transform:translate3d(0,24px,0) scale(.82)}
+.js .c-ai.reveal:not(.in){transform:translate3d(56px,28px,0) rotate(2.5deg) scale(.96)}
+
+/* inner content drifts a little against the pointer (vars set from JS, hover devices only) */
+html:not(.lite) .card .vis{translate:calc(var(--tx,0) * 9px) calc(var(--ty,0) * 7px);transition:translate .5s var(--ease)}
+html:not(.lite) .card h3{translate:calc(var(--tx,0) * -3px) calc(var(--ty,0) * -2px);transition:translate .5s var(--ease)}
+
+/* beta glow grows as the section scrolls in (--bp is set from JS) */
+.beta::before{transform:translate(-50%,-50%) scale(calc(.55 + var(--bp,0) * .75));opacity:calc(.25 + var(--bp,0) * .75)}
+</style>
+
+<style>
+/* ---- patch 3: focus-first layout + Pomodoro deep dive ---- */
+.c-vt,.c-star,.c-ai{grid-column:span 4}
+
+/* big Pomodoro card */
+.c-pom{grid-column:span 12;flex-direction:row;align-items:stretch;gap:44px;padding:34px;
+  background:radial-gradient(640px 360px at 100% 0%,rgba(16,185,129,.1),transparent 70%),var(--card)}
+.c-pom .pom-copy{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:16px}
+.c-pom .pom-copy h3{font:700 clamp(26px,3.2vw,40px)/1.12 var(--serif);text-wrap:balance}
+.c-pom .pom-copy>p{font-size:16px;max-width:54ch}
+.c-pom .pom-side{flex:none;width:min(360px,100%);display:flex;flex-direction:column;align-items:center;gap:14px;align-self:center}
+.c-pom h3{translate:none!important}
+.js .c-pom.reveal:not(.in){transform:translate3d(0,48px,0) scale(.97)}
+.js .c-pom.reveal.in:hover{transform:none}
+
+/* how-it-works steps */
+.steps{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.step{position:relative;overflow:hidden;width:100%;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start;text-align:left;
+  padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:#121312;color:var(--text);transition:all .6s var(--ease)}
+.step:hover{border-color:#34403a}
+.step b{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:1px solid #2c342f;background:#161a18;
+  font:600 14px/1 var(--mono);color:var(--muted);transition:all .6s var(--ease)}
+.step strong{display:block;font:600 16px/1.25 var(--sans)}
+.step small{display:block;margin-top:5px;font:400 13.5px/1.5 var(--sans);color:var(--muted)}
+.step.on{border-color:rgba(16,185,129,.55);background:#101a15;transform:translateX(6px)}
+.step.on b{background:var(--mint);border-color:var(--mint);color:#04140d;box-shadow:0 0 18px var(--mint-glow)}
+.step::after{content:"";position:absolute;left:0;bottom:0;width:100%;height:2px;background:var(--mint-hi);transform:scaleX(0);transform-origin:0 50%}
+.steps.auto .step.on::after{animation:stepFill 4.2s linear forwards}
+@keyframes stepFill{to{transform:scaleX(1)}}
+
+/* work / break cycle strip */
+.cycle{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.cy-l{font:500 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.cy-bar{display:flex;align-items:stretch;gap:8px}
+.cy-seg{position:relative;overflow:hidden;min-width:96px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#111;
+  display:flex;flex-direction:column;gap:5px;transition:border-color .6s var(--ease)}
+.cy-seg b{position:relative;font:600 13px/1 var(--sans)}
+.cy-seg em{position:relative;font:400 11.5px/1 var(--mono);font-style:normal;color:var(--muted)}
+.cy-seg i{position:absolute;inset:0;background:rgba(52,211,153,.2);transform:scaleX(var(--f,0));transform-origin:0 50%;transition:transform 1s linear}
+.cy-seg.b i{background:rgba(130,150,180,.22)}
+.cy-seg.on{border-color:rgba(16,185,129,.55)}
+.cy-seg.b.on{border-color:rgba(130,150,180,.6)}
+.cy-loop{align-self:center;white-space:nowrap;font:500 11px/1 var(--mono);color:var(--dim)}
+
+/* the interactive panel */
+.pp-tag{font:500 11px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--mint-hi)}
+.pp{width:100%;padding:24px;border-radius:18px;background:#171615;border:1px solid #262524;box-shadow:0 24px 60px rgba(0,0,0,.5);
+  display:flex;flex-direction:column;gap:16px;font-size:14px;color:#d9d9d9}
+.pp [data-s]{padding:8px;margin:-8px;border-radius:12px;transition:box-shadow .6s var(--ease),background .6s var(--ease)}
+.pp [data-s].hl{box-shadow:0 0 0 1px rgba(52,211,153,.7),0 0 28px rgba(16,185,129,.22);background:rgba(16,185,129,.05)}
+.pp-state{text-align:center;font:500 11px/1 var(--mono);letter-spacing:.24em;color:#8d8d8a}
+.pp-time{margin:10px 0 12px;text-align:center;font:300 56px/1 var(--sans);letter-spacing:.01em;color:#ececec;font-variant-numeric:tabular-nums}
+.pp-bar{height:5px;border-radius:3px;background:#2a2928;overflow:hidden}
+.pp-bar i{display:block;height:100%;border-radius:3px;background:var(--mint-hi);transform:scaleX(0);transform-origin:0 50%;transition:transform 1s linear}
+.pp-ctl{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:10px;margin-top:14px}
+.pp-ctl button{height:46px;display:grid;place-items:center;border-radius:10px;border:1px solid #343432;background:#161514;color:#d8d8d8;transition:all .6s var(--ease)}
+.pp-ctl button:hover{transform:translateY(-2px);border-color:#4a4a47}
+.pp-ctl button:active{transform:scale(.95)}
+.pp-ctl .play{background:#3ddc8c;border-color:#3ddc8c;color:#06281c}
+.pp-ctl .play:hover{box-shadow:0 8px 22px rgba(61,220,140,.3)}
+.pp-ctl svg{width:20px;height:20px}
+.pp-row{display:flex;align-items:center;gap:10px}
+.pp-row label{color:#b9b9b6;font-size:14px}
+.pp input[type=number],.pp select,.pp-add input{border:1px solid #343432;border-radius:9px;background:#0f0f0e;color:#f0f0ee;font:400 15px/1.2 var(--sans);padding:10px 12px;outline-offset:2px}
+.pp input[type=number]{width:70px}
+.pp-row input[type=number]+label{margin-left:6px}
+.pp select{flex:1;min-width:0}
+.pp-mood{display:flex;flex-direction:column;gap:14px}
+.pp-mood .pp-row label{width:56px}
+.pp input[type=range]{flex:1;min-width:0;accent-color:var(--mint-hi)}
+.pp-lbl{margin-bottom:10px;font:500 11px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:#8d8d8a}
+.pp-add{display:flex;gap:8px}
+.pp-add input{flex:1;min-width:0}
+.pp-add button{width:46px;flex:none;display:grid;place-items:center;border-radius:9px;border:1px solid #343432;background:#161514;color:var(--mint-hi);transition:all .6s var(--ease)}
+.pp-add button:hover{border-color:var(--mint)}
+.pp-add.bad input{border-color:var(--danger)}
+.pp-list{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.pp-list:empty{display:none}
+.pp-list li{display:inline-flex;align-items:center;gap:8px;padding:6px 6px 6px 10px;border-radius:99px;border:1px solid #343432;background:#0f0f0e;
+  font:500 12.5px/1 var(--mono);animation:popB .5s var(--ease) backwards;transition:all .6s var(--ease)}
+.pp-list li::before{content:"";width:7px;height:7px;border-radius:50%;background:#5b615d;transition:all .6s var(--ease)}
+.pp-list li button{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;border:0;background:transparent;color:#8d8d8a;font-size:15px;line-height:1}
+.pp-list li button:hover{background:#262624;color:#fff}
+.pp.blocking .pp-list li{border-color:rgba(248,113,113,.5);color:#fca5a5}
+.pp.blocking .pp-list li::before{background:var(--danger);box-shadow:0 0 8px var(--danger)}
+.pp-empty{margin:12px 0 0;color:#8d8d8a;font-size:14px}
+.pp-empty[hidden]{display:none}
+.pp-note{margin:0;padding-top:14px;border-top:1px solid #262524;font-size:12.5px;line-height:1.5;color:#8d8d8a;min-height:3.4em}
+.pp-speed{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:99px;border:1px solid var(--line);background:#111;color:var(--muted);font:500 12px/1 var(--mono);letter-spacing:.06em;transition:all .6s var(--ease)}
+.pp-speed .ic{width:15px;height:15px}
+.pp-speed:hover{border-color:#34403a;color:var(--text)}
+.pp-speed[aria-pressed="true"]{border-color:rgba(16,185,129,.6);color:var(--mint-hi);background:#101a15}
+
+/* performance becomes a slim strip: headline number + the two bars */
+.c-stat{grid-column:span 12;grid-row:auto;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:20px 48px;padding:30px 34px}
+.c-stat>div:first-child{flex:none}
+.c-stat>div:nth-child(2){flex:1 1 420px;min-width:0}
+.c-stat .note{flex:1 0 100%}
+.c-stat .kicker{font-size:clamp(18px,2vw,26px)}
+.c-stat .big{font-size:clamp(64px,8vw,104px)}
+.c-stat h3{font-size:clamp(20px,2.2vw,26px)}
+
+@media (max-width:1000px){
+  .c-pom{grid-column:span 6;flex-direction:column;gap:28px}
+  .c-pom .pom-side{align-self:center}
+  .c-vt,.c-star{grid-column:span 3}
+  .c-ai{grid-column:span 6}
+  .c-stat{grid-column:span 6;flex-direction:column;align-items:stretch}
+}
+@media (max-width:640px){
+  .c-pom{padding:22px}
+  .c-vt,.c-star,.c-ai{grid-column:span 6}
+}
+</style>
+
+<style>
+/* ---- patch 4: pinned two-line intro (compositor-only, scrubbed like the hero zoom) ---- */
+.duo{position:relative;height:300svh;background:var(--ink-0)}
+.duo-stage{position:sticky;top:0;height:100svh;overflow:hidden;display:grid;place-items:center;background:var(--ink-0);contain:layout paint style}
+.duo-stage::before{content:"";position:absolute;left:50%;top:50%;width:min(1100px,130vw);height:560px;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,rgba(16,185,129,.1),transparent);pointer-events:none}
+.duo-h{position:relative;margin:0;display:flex;flex-direction:column;align-items:center;gap:.06em;width:100%;text-align:center;
+  font-family:var(--serif);font-weight:700;letter-spacing:.07em;text-transform:uppercase;text-wrap:nowrap}
+.duo-h .dl{display:block;white-space:nowrap;line-height:1.06;backface-visibility:hidden;transform:translate3d(0,0,0)}
+.duo-h .a{font-size:var(--fa,clamp(40px,12.5vw,200px));color:var(--text)}
+.duo-h .b{font-size:var(--fb,clamp(15px,4.9vw,88px));color:var(--mint-hi)}
+.duo.armed .dl{will-change:transform,opacity}
+html.lite .duo{height:220svh}
+@media (prefers-reduced-motion:reduce){.duo{height:100svh}.duo-stage{position:relative}}
+</style>
+
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
@@ -506,7 +667,7 @@ html.lite .hero{height:420svh}
 
 <nav class="dots" aria-label="Sections">
   <button type="button" data-go="s1" aria-label="Browser" aria-current="true"></button>
-  <button type="button" data-go="s2" aria-label="Performance"></button>
+  <button type="button" data-go="s2" aria-label="Features"></button>
   <button type="button" data-go="s3" aria-label="Beta registration"></button>
 </nav>
 
@@ -643,30 +804,69 @@ html.lite .hero{height:420svh}
 <!-- ═════════ SECTION 2: performance ═════════ -->
 <section class="stats" id="s2" aria-labelledby="s2h">
   <header class="stats-head">
-    <span class="eyebrow fade-up">Performance &amp; efficiency</span>
-    <h2 id="s2h">More browser, less overhead.</h2>
-    <p class="lede fade-up" style="--dl:.5s">Dexerion keeps the tools you use every day within reach and asks your computer for less while it does.</p>
+    <span class="eyebrow fade-up">Built for focus</span>
+    <h2 id="s2h">Everything you need to stay on task.</h2>
+    <p class="lede fade-up" style="--dl:.5s">Dexerion keeps the tools you use every day within reach, with a focus timer built right in, and it asks your computer for less while it does.</p>
   </header>
 
   <div class="bento">
-    <article class="card c-stat reveal">
-      <div>
-        <div class="kicker">Up to</div>
-        <div class="big" aria-label="40 percent"><span class="num" data-count="40">40</span><span class="pct">%</span><sup>*</sup></div>
-      </div>
-      <div>
-        <h3>Less Resources</h3>
-        <div class="bars">
-          <div class="bar-row"><div class="lab"><span>Typical browser, specific workload</span><b>Baseline</b></div><div class="track base"><i style="--w:100%"></i></div></div>
-          <div class="bar-row"><div class="lab"><span>Dexerion, same workload</span><b>Up to 40% lower</b></div><div class="track dex"><i style="--w:60%"></i></div></div>
+    <article class="card c-pom reveal" id="pomCard">
+      <div class="pom-copy">
+        <span class="eyebrow">Built-in Pomodoro timer</span>
+        <h3>Focus in rounds. Rest on purpose.</h3>
+        <p>The timer lives in your sidebar, one click from any tab. Work in short, focused rounds, take a break, and keep distracting sites out of reach, all without leaving the page you are on.</p>
+        <ol class="steps auto" id="steps">
+          <li><button type="button" class="step" data-step="1" aria-pressed="false"><b>1</b><span><strong>Start the clock</strong><small>Press play and the countdown begins. Pause any time, skip ahead to the next phase, or reset to start over.</small></span></button></li>
+          <li><button type="button" class="step" data-step="2" aria-pressed="false"><b>2</b><span><strong>Shape your rounds</strong><small>Choose how many minutes you work and how long you break, then go round again.</small></span></button></li>
+          <li><button type="button" class="step" data-step="3" aria-pressed="false"><b>3</b><span><strong>Set the mood</strong><small>Play white noise while you work and set the volume that suits you.</small></span></button></li>
+          <li><button type="button" class="step" data-step="4" aria-pressed="false"><b>4</b><span><strong>Block distractions</strong><small>List sites like youtube.com and they stay blocked while a work round is running, then open up again at break time.</small></span></button></li>
+        </ol>
+        <div class="cycle" aria-hidden="true">
+          <span class="cy-l" id="ppRound">Ready</span>
+          <div class="cy-bar">
+            <div class="cy-seg w" id="segWork"><i></i><b>Work</b><em>25 min</em></div>
+            <div class="cy-seg b" id="segBreak"><i></i><b>Break</b><em>1 min</em></div>
+            <span class="cy-loop">&#8635; repeat</span>
+          </div>
         </div>
-        <div class="tabrange">
-          <div class="tr-head"><span>Tested with 1 to 10 active tabs</span><b><span id="tabCount">10</span> tabs</b></div>
-          <div class="tr-ticks" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
-        </div>
       </div>
-      <p class="note">*Based on internal comparisons under specific workloads and specific testing scenarios. Tests covered 1 to 10 active tabs.</p>
+
+      <div class="pom-side">
+        <span class="pp-tag">Live demo &middot; try it</span>
+        <div class="pp" id="pp" data-phase="ready">
+          <div class="pp-run" data-s="1">
+            <div class="pp-state" id="ppState">READY</div>
+            <div class="pp-time" id="ppTime" role="timer">25:00</div>
+            <div class="pp-bar"><i id="ppBar"></i></div>
+            <div class="pp-ctl">
+              <button type="button" class="play" id="ppPlay" aria-label="Start"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></button>
+              <button type="button" id="ppSkip" aria-label="Skip to next phase"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5v14l9-7zM16 5h2.5v14H16z"/></svg></button>
+              <button type="button" id="ppReset" aria-label="Reset"><svg class="ic" aria-hidden="true"><use href="#i-reload"/></svg></button>
+            </div>
+          </div>
+          <div class="pp-row" data-s="2">
+            <label for="ppWork">Work</label><input id="ppWork" type="number" min="1" max="120" value="25" inputmode="numeric">
+            <label for="ppBreak">Break</label><input id="ppBreak" type="number" min="1" max="60" value="1" inputmode="numeric">
+          </div>
+          <div class="pp-mood" data-s="3">
+            <div class="pp-row"><label for="ppSound">Sound</label><select id="ppSound"><option>White noise</option></select></div>
+            <div class="pp-row"><label for="ppVol">Volume</label><input id="ppVol" type="range" min="0" max="100" value="50"></div>
+          </div>
+          <div class="pp-block" data-s="4">
+            <div class="pp-lbl">Blocked during work</div>
+            <form class="pp-add" id="ppForm" novalidate>
+              <input id="ppSite" type="text" placeholder="e.g. youtube.com" autocomplete="off" aria-label="Site to block">
+              <button type="submit" aria-label="Add site"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+            </form>
+            <ul class="pp-list" id="ppList"></ul>
+            <p class="pp-empty" id="ppEmpty">Nothing blocked.</p>
+          </div>
+          <p class="pp-note" id="ppNote" aria-live="polite">Add sites to keep off-limits while a work round runs.</p>
+        </div>
+        <button type="button" class="pp-speed" id="ppSpeed" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg><span>Preview at 60&times; speed</span></button>
+      </div>
     </article>
+
 
     <article class="card c-vt reveal">
       <h3>Vertical Tabs</h3>
@@ -687,12 +887,6 @@ html.lite .hero{height:420svh}
       </div>
     </article>
 
-    <article class="card c-pom reveal">
-      <h3>Built-in Pomodoro Timer</h3>
-      <p>A focus timer sits in your sidebar, one click from any tab.</p>
-      <div class="vis ring" aria-hidden="true"><svg viewBox="0 0 120 120"><circle class="t" cx="60" cy="60" r="50"/><circle class="p" cx="60" cy="60" r="50"/></svg><b>24:56</b></div>
-    </article>
-
     <article class="card c-ai reveal">
       <h3>Dexerion AI Assistant</h3>
       <p>Open the assistant panel beside any page and ask.</p>
@@ -701,6 +895,33 @@ html.lite .hero{height:420svh}
         <div class="ask-in"><em id="aiTyped">Ask anything…</em><i></i><span class="send"><svg class="ic"><use href="#i-up"/></svg></span></div>
       </div>
     </article>
+    <article class="card c-stat reveal">
+      <div>
+        <div class="kicker">Up to</div>
+        <div class="big" aria-label="40 percent"><span class="num" data-count="40">40</span><span class="pct">%</span><sup>*</sup></div>
+      </div>
+      <div>
+        <h3>Less Resources</h3>
+        <div class="bars">
+          <div class="bar-row"><div class="lab"><span>Typical browser, specific workload</span><b>Baseline</b></div><div class="track base"><i style="--w:100%"></i></div></div>
+          <div class="bar-row"><div class="lab"><span>Dexerion, same workload</span><b>Up to 40% lower</b></div><div class="track dex"><i style="--w:60%"></i></div></div>
+        </div>
+        <div class="tabrange">
+          <div class="tr-head"><span>Tested with 1 to 10 active tabs</span><b><span id="tabCount">10</span> tabs</b></div>
+          <div class="tr-ticks" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
+        </div>
+      </div>
+      <p class="note">*Based on internal comparisons under specific workloads and specific testing scenarios. Tests covered 1 to 10 active tabs.</p>
+    </article>
+  </div>
+</section>
+
+<section class="duo" id="duo" aria-label="Dexerion, the lightweight browser">
+  <div class="duo-stage">
+    <h2 class="duo-h">
+      <span class="dl a" id="duoA">Dexerion</span>
+      <span class="dl b" id="duoB">The lightweight browser</span>
+    </h2>
   </div>
 </section>
 
@@ -1160,11 +1381,7 @@ document.documentElement.classList.add('js');
   setInterval(function(){
     if (RM || document.hidden) return;
     remain = remain > 0 ? remain - 1 : 1500;
-    if (!window.__dexZoom) ptime.textContent = fmt(remain); pomB.textContent = fmt(remain);
-    if (pomCard.classList.contains('in')){
-      if (!pomIn) pomIn = Date.now();
-      if (Date.now() - pomIn > 2600){ ringP.style.transition = 'stroke-dashoffset 1s linear'; ringP.style.strokeDashoffset = (314 * (1 - remain / 1500)).toFixed(1); }
-    }
+    if (!window.__dexZoom) ptime.textContent = fmt(remain);
   }, 1000);
 
   /* feature-card loops */
@@ -1272,6 +1489,276 @@ document.documentElement.classList.add('js');
       if (alive) requestAnimationFrame(step); else g.clearRect(0, 0, W, H);
     })();
   };
+})();
+
+/* ---------- 7. Extra scroll motion + pointer parallax ---------- */
+(function(){
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var lite = !!window.__dexLite;
+  function $(q){ return document.querySelector(q); }
+  function clamp(v, a, b){ return Math.min(b, Math.max(a, v)); }
+  var head = $('#s2h'), beta = $('#s3'), bh2 = $('#s3h');
+  var raf = 0;
+  function prog(r, vh){ return clamp((vh - r.top) / (vh + r.height), 0, 1); }
+
+  function update(){
+    raf = 0;
+    if (window.__dexZoom) return;                       // hero camera is moving: keep the main thread free
+    var vh = window.innerHeight;
+    // read first, write after (no layout thrash)
+    var hr = head.getBoundingClientRect(), br = beta.getBoundingClientRect();
+
+    if (hr.bottom > 0 && hr.top < vh){                   // heading lags the scroll slightly
+      head.style.translate = '0 ' + ((prog(hr, vh) - .5) * 36).toFixed(1) + 'px';
+    }
+    if (br.bottom > 0 && br.top < vh){                   // beta: glow swells, headline settles in
+      var q = clamp(prog(br, vh) * 2, 0, 1);
+      beta.style.setProperty('--bp', q.toFixed(3));
+      bh2.style.scale = (.88 + .12 * clamp(q * 1.6, 0, 1)).toFixed(3);
+    }
+  }
+  function queue(){ if (!raf) raf = requestAnimationFrame(update); }
+  window.addEventListener('scroll', queue, {passive:true});
+  window.addEventListener('resize', queue);
+  queue();
+
+  /* inner pointer parallax on the feature cards (hover-capable, non-lite devices only) */
+  if (!lite && window.matchMedia && matchMedia('(hover:hover)').matches){
+    Array.prototype.forEach.call(document.querySelectorAll('.card'), function(c){
+      var pend = false;
+      c.addEventListener('pointermove', function(e){
+        if (pend) return; pend = true;
+        var x = e.clientX, yy = e.clientY;
+        requestAnimationFrame(function(){
+          pend = false;
+          var r = c.getBoundingClientRect();
+          c.style.setProperty('--tx', ((x - r.left) / r.width * 2 - 1).toFixed(3));
+          c.style.setProperty('--ty', ((yy - r.top) / r.height * 2 - 1).toFixed(3));
+        });
+      });
+      c.addEventListener('pointerleave', function(){ c.style.setProperty('--tx', 0); c.style.setProperty('--ty', 0); });
+    });
+  }
+})();
+
+/* ---------- 8. Pomodoro panel + how-it-works walkthrough ---------- */
+(function(){
+  var pp = document.getElementById('pp'); if (!pp) return;
+  var RM = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function $(id){ return document.getElementById(id); }
+  function clamp(v, a, b){ return Math.min(b, Math.max(a, v)); }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function fmt(s){ s = Math.max(0, Math.ceil(s)); return pad(Math.floor(s / 60)) + ':' + pad(s % 60); }
+  function put(el, txt){ if (el.textContent !== txt) el.textContent = txt; }
+
+  var el = { state:$('ppState'), time:$('ppTime'), bar:$('ppBar'), play:$('ppPlay'), skip:$('ppSkip'), reset:$('ppReset'),
+    work:$('ppWork'), brk:$('ppBreak'), vol:$('ppVol'), form:$('ppForm'), site:$('ppSite'), list:$('ppList'), empty:$('ppEmpty'),
+    note:$('ppNote'), speed:$('ppSpeed'), round:$('ppRound'), segW:$('segWork'), segB:$('segBreak') };
+  var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+  var ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+
+  var phase = 'ready', running = false, rem = 25 * 60, total = 25 * 60, round = 1, speed = 1, last = 0, timer = 0, sites = [];
+
+  function mins(inp, fallback, max){ var v = parseInt(inp.value, 10); if (!(v >= 1)) v = fallback; return Math.min(max, v); }
+  function workSec(){ return mins(el.work, 25, 120) * 60; }
+  function breakSec(){ return mins(el.brk, 1, 60) * 60; }
+
+  /* ----- white noise (only ever starts after the user presses play) ----- */
+  var ac = null, gain = null;
+  function noiseWanted(){ return running && phase === 'work'; }
+  function audioSync(){
+    try {
+      var want = noiseWanted();
+      if (want && !ac){
+        var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+        ac = new AC();
+        var len = ac.sampleRate * 2, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+        for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        var src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+        gain = ac.createGain(); gain.gain.value = 0; src.connect(gain); gain.connect(ac.destination); src.start();
+      }
+      if (!ac) return;
+      if (want && ac.state === 'suspended') ac.resume();
+      gain.gain.setTargetAtTime(want ? (el.vol.value / 100) * 0.12 : 0, ac.currentTime, .15);
+    } catch (e) {}
+  }
+
+  /* ----- render ----- */
+  function render(){
+    put(el.time, fmt(rem));
+    el.bar.style.transform = 'scaleX(' + clamp(total > 0 ? 1 - rem / total : 0, 0, 1).toFixed(4) + ')';
+    var label = phase === 'ready' ? 'READY' : phase.toUpperCase();
+    if (phase !== 'ready' && !running) label += ' · PAUSED';
+    put(el.state, label);
+    pp.dataset.phase = phase;
+    pp.classList.toggle('blocking', phase === 'work' && running);
+    var icon = running ? ICON_PAUSE : ICON_PLAY;
+    if (el.play.dataset.i !== (running ? 'p' : 'r')){ el.play.innerHTML = icon; el.play.dataset.i = running ? 'p' : 'r'; el.play.setAttribute('aria-label', running ? 'Pause' : 'Start'); }
+
+    var w = mins(el.work, 25, 120), b = mins(el.brk, 1, 60), f = clamp(total > 0 ? 1 - rem / total : 0, 0, 1);
+    el.segW.style.flexGrow = w; el.segB.style.flexGrow = b;
+    put(el.segW.querySelector('em'), w + ' min'); put(el.segB.querySelector('em'), b + ' min');
+    el.segW.classList.toggle('on', phase === 'work'); el.segB.classList.toggle('on', phase === 'break');
+    el.segW.style.setProperty('--f', phase === 'work' ? f.toFixed(4) : 0);
+    el.segB.style.setProperty('--f', phase === 'break' ? f.toFixed(4) : 0);
+    put(el.round, phase === 'ready' ? 'Ready' : 'Round ' + round + ' · ' + (phase === 'work' ? 'Work' : 'Break'));
+
+    var n = sites.length, note;
+    if (phase === 'ready') note = 'Add sites to keep off-limits while a work round runs.';
+    else if (!running) note = 'Paused.';
+    else if (phase === 'work') note = n ? (n + (n === 1 ? ' site is' : ' sites are') + ' blocked until the break.') : 'Work round running. Add a site above to block it.';
+    else note = 'Break time. Blocked sites are open again.';
+    put(el.note, note);
+    audioSync();
+  }
+
+  /* ----- timer ----- */
+  function advance(){
+    if (phase === 'work'){ phase = 'break'; total = breakSec(); }
+    else { if (phase === 'break') round++; phase = 'work'; total = workSec(); }
+    rem = total;
+  }
+  function tick(){
+    var now = performance.now(), dt = (now - last) / 1000; last = now;
+    rem -= dt * speed;
+    var guard = 0;
+    while (rem <= 0 && guard++ < 1000){ var over = -rem; advance(); rem -= over; }
+    render();
+  }
+  function setRunning(v){
+    running = v;
+    if (v){ last = performance.now(); if (!timer) timer = setInterval(tick, 250); }
+    else { clearInterval(timer); timer = 0; }
+    render();
+  }
+  function begin(){ phase = 'work'; total = workSec(); rem = total; round = 1; setRunning(true); }
+
+  el.play.addEventListener('click', function(){ if (phase === 'ready') begin(); else setRunning(!running); });
+  el.skip.addEventListener('click', function(){ if (phase === 'ready') begin(); else { advance(); render(); } });
+  el.reset.addEventListener('click', function(){
+    clearInterval(timer); timer = 0; running = false; phase = 'ready'; round = 1; total = rem = workSec(); render();
+  });
+  function onMinutes(){ if (phase === 'ready'){ total = rem = workSec(); } render(); }
+  el.work.addEventListener('input', onMinutes); el.brk.addEventListener('input', onMinutes);
+  el.work.addEventListener('change', function(){ el.work.value = mins(el.work, 25, 120); onMinutes(); });
+  el.brk.addEventListener('change', function(){ el.brk.value = mins(el.brk, 1, 60); onMinutes(); });
+  el.vol.addEventListener('input', audioSync);
+  el.speed.addEventListener('click', function(){
+    var on = el.speed.getAttribute('aria-pressed') !== 'true';
+    el.speed.setAttribute('aria-pressed', on ? 'true' : 'false'); speed = on ? 60 : 1;
+    put(el.speed.querySelector('span'), on ? 'Running at 60× speed' : 'Preview at 60× speed');
+  });
+
+  /* ----- blocked sites (rendered with textContent only: nothing typed is ever parsed as HTML) ----- */
+  function norm(v){
+    v = String(v || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/^www\./, '').split(/[\/?#]/)[0];
+    return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(v) ? v : '';
+  }
+  function renderSites(){
+    el.list.textContent = '';
+    sites.forEach(function(s){
+      var li = document.createElement('li'), t = document.createElement('span'), x = document.createElement('button');
+      t.textContent = s; x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove ' + s);
+      x.addEventListener('click', function(){ sites = sites.filter(function(q){ return q !== s; }); renderSites(); });
+      li.appendChild(t); li.appendChild(x); el.list.appendChild(li);
+    });
+    el.empty.hidden = sites.length > 0;
+    render();
+  }
+  el.form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var d = norm(el.site.value);
+    if (!d){ el.form.classList.add('bad'); setTimeout(function(){ el.form.classList.remove('bad'); }, 700); return; }
+    if (sites.indexOf(d) < 0 && sites.length < 8) sites.push(d);
+    el.site.value = ''; renderSites();
+  });
+
+  /* ----- walkthrough: steps highlight the matching part of the panel ----- */
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step')), list = $('steps'), card = $('pomCard'), cur = -1, autoOn = !RM;
+  if (!autoOn) list.classList.remove('auto');
+  function setStep(i){
+    cur = i;
+    steps.forEach(function(s, n){ s.classList.toggle('on', n === i); s.setAttribute('aria-pressed', n === i ? 'true' : 'false'); });
+    Array.prototype.forEach.call(pp.querySelectorAll('[data-s]'), function(n){ n.classList.toggle('hl', +n.dataset.s === i + 1); });
+  }
+  function stopAuto(){ autoOn = false; list.classList.remove('auto'); }
+  steps.forEach(function(s, n){ s.addEventListener('click', function(){ stopAuto(); setStep(n); }); });
+  pp.addEventListener('pointerdown', stopAuto); pp.addEventListener('focusin', stopAuto);
+  setInterval(function(){
+    if (!autoOn || document.hidden || window.__dexZoom || !card.classList.contains('in')) return;
+    setStep((cur + 1) % steps.length);
+  }, 4200);
+  setStep(0);
+  render();
+})();
+
+/* ---------- 9. Pinned two-line intro: DEXERION / THE LIGHTWEIGHT BROWSER ---------- */
+(function(){
+  var sec = document.getElementById('duo'), A = document.getElementById('duoA'), B = document.getElementById('duoB');
+  if (!sec || !A || !B) return;
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;   // static, centred, no pin
+  var lite = !!window.__dexLite, N = lite ? 24 : 56, DUR = 1000;
+  var anims = [], ready = false, armed = false, ps = 0, target = 0, raf = 0, last = 0, vh = 0, range = 1;
+  function clamp(v, a, b){ return Math.min(b, Math.max(a, v)); }
+  function ease(t){ t = clamp(t, 0, 1); return 1 - Math.pow(1 - t, 4); }             // easeOutQuart: fast in, soft landing
+  function smooth(a, b, t){ t = clamp((t - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+
+  function fit(){                               // keep the long line inside the viewport on narrow screens
+    var vw = document.documentElement.clientWidth;
+    sec.style.removeProperty('--fa'); sec.style.removeProperty('--fb');
+    var wb = B.getBoundingClientRect().width, wa = A.getBoundingClientRect().width, k = 1;
+    var max = vw * .92; if (wb > max) k = Math.min(k, max / wb); if (wa > max) k = Math.min(k, max / wa);
+    if (k < 1){
+      var fa = parseFloat(getComputedStyle(A).fontSize) * k, fb = parseFloat(getComputedStyle(B).fontSize) * k;
+      sec.style.setProperty('--fa', fa.toFixed(2) + 'px'); sec.style.setProperty('--fb', fb.toFixed(2) + 'px');
+    }
+  }
+  function kf(fn){ var o = []; for (var i = 0; i <= N; i++){ var k = fn(i / N); k.offset = i / N; o.push(k); } return o; }
+  function scrub(el, frames){ var a = el.animate(frames, { duration: DUR, fill: 'both', easing: 'linear' }); a.pause(); anims.push(a); return a; }
+
+  function build(){
+    teardown(); fit();
+    var vw = document.documentElement.clientWidth;
+    var offA = -(vw / 2 + A.getBoundingClientRect().width / 2 + 40);                  // start fully off the left edge
+    var offB =  (vw / 2 + B.getBoundingClientRect().width / 2 + 40);                  // start fully off the right edge
+    // 0 → .5 slide in, .5 → .82 hold (tiny drift), .82 → 1 settle while the section un-pins
+    function line(off){
+      return kf(function(p){
+        var t = ease(p / .5), x = off * (1 - t), s = 1 + .035 * smooth(.5, .82, p);
+        return { transform: 'translate3d(' + x.toFixed(1) + 'px,0,0) scale3d(' + s.toFixed(4) + ',' + s.toFixed(4) + ',1)', opacity: (clamp(p / .12, 0, 1) * (1 - smooth(.86, 1, p))).toFixed(3) };
+      });
+    }
+    scrub(A, line(offA)); scrub(B, line(offB));
+    ready = true; measure(); apply(ps);
+  }
+  function teardown(){ anims.forEach(function(a){ a.cancel(); }); anims = []; ready = false; armed = false; sec.classList.remove('armed'); }
+  function measure(){ vh = window.innerHeight; range = Math.max(1, sec.offsetHeight - vh); }
+
+  function apply(p){
+    var t = p * DUR;
+    for (var i = 0; i < anims.length; i++) anims[i].currentTime = t;
+  }
+  function read(){
+    var r = sec.getBoundingClientRect();                                             // one read per frame, no cached offsets
+    target = clamp(-r.top / range, 0, 1);
+    var near = r.top < vh * 1.2 && r.bottom > -vh * .2;
+    if (near !== armed){ armed = near; sec.classList.toggle('armed', near); }        // will-change only while it is on screen
+  }
+  function loop(now){
+    raf = 0; read();
+    var dt = last ? Math.min(64, now - last) : 16; last = now;
+    ps += (target - ps) * (1 - Math.exp(-dt / 90));                                   // same glide as the hero: a wheel notch eases in
+    if (Math.abs(target - ps) < .0004) ps = target;
+    if (ready) apply(ps);
+    if (ps !== target) raf = requestAnimationFrame(loop); else last = 0;
+  }
+  function queue(){ if (!raf) raf = requestAnimationFrame(loop); }
+
+  window.addEventListener('scroll', queue, {passive:true});
+  var rt = 0; window.addEventListener('resize', function(){ clearTimeout(rt); rt = setTimeout(function(){ build(); queue(); }, 150); });
+  function init(){ build(); read(); ps = target; apply(ps); queue(); }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(init); else init();
+  init();
 })();
 </script>
 
